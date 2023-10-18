@@ -1,96 +1,151 @@
-breed [leoes leao]
-breed [hienas hiena]
+breed[leoes leao]
+breed[hienas hiena]
 
-globals [
-  small-food-density    ; Densidade de alimento de pequeno porte
-  large-food-density    ; Densidade de alimento de grande porte
-  small-food-energy     ; Energia obtida ao comer alimento de pequeno porte
-  large-food-energy     ; Energia obtida ao comer alimento de grande porte
-  blue-cell-density     ; Densidade de células azuis
-]
+turtles-own [energia]
 
-turtles-own [
-  energy
-]
+leoes-own [nFood]
+
+globals [celulas-azuis-em-memoria]
 
 to setup
-  clear-all
-  set small-food-density 0.20  ; Configure a densidade de alimento de pequeno porte aqui (entre 0 e 1)
-  set large-food-density 0.10  ; Configure a densidade de alimento de grande porte aqui (entre 0 e 1)
-  set small-food-energy 50    ; Configure a energia obtida ao comer alimento de pequeno porte aqui (entre 1 e 50)
-  set large-food-energy 50    ; Configure a energia obtida ao comer alimento de grande porte aqui (entre 1 e 50)
-  set blue-cell-density 0.05   ; Configure a densidade de células azuis aqui (entre 0 e 1)
   setup-patches
   setup-turtles
+   set celulas-azuis-em-memoria patches with [pcolor = blue]
   reset-ticks
-end
+ end
 
 to setup-patches
+  clear-all
   set-patch-size 15
-  ask n-of (count patches * small-food-density) patches [
-    set pcolor brown
-    set plabel small-food-energy
+  ask patches
+  [
+    if random 101 <= vermelhas
+    [
+      set pcolor red
+    ]
+    if random 101 <= castanhas
+    [
+      set pcolor brown
+    ]
   ]
-  ask n-of (count patches * large-food-density) patches with [pcolor != brown] [
-    set pcolor red
-    set plabel large-food-energy
-  ]
-  ask n-of (count patches * blue-cell-density) patches with [pcolor != brown and pcolor != red] [
+  ask n-of numCelulasAzuis patches with [pcolor = black] [
     set pcolor blue
   ]
 end
 
 to setup-turtles
-  create-leoes nleoes [
+  clear-turtles
+  create-leoes nleoes
+  [
+    set nFood 0
+    set energia EnergiaInicial
     set shape "cat"
     set color orange
+    set heading 90
     setxy random-xcor random-ycor
-    while [pcolor != black] [
+    while [[pcolor] of patch-here = red]
+    [
       setxy random-xcor random-ycor
     ]
-    set heading 90
-    set energy 100 ; Define a energia inicial dos leões
   ]
-
-  create-hienas nhienas [
+  create-hienas nhienas
+  [
+    set energia EnergiaInicial
     set shape "dog"
     set color brown
     setxy random-xcor random-ycor
-    while [pcolor != black] [
+    while [[pcolor] of patch-here = red]
+    [
       setxy random-xcor random-ycor
     ]
-    set heading 90
-    set energy 100 ; Define a energia inicial das hienas
   ]
 end
 
 to go
-  move-leoes
-  move-hienas
-  manage-food
-  if count leoes = 0 or count hienas = 0 [
+  Moveleoes
+  Movehienas
+  check-death
+  if reproduce?
+  [
+    regrow-food
+  ]
+  if ticks = 500 or  count leoes <= 0 or count hienas <= 0
+  [
     stop
   ]
   tick
 end
 
-to move-leoes
+to regrow-food
+  if count patches with [pcolor = brown] < castanhas
+  [
+    ask patches with [pcolor = black]
+    [
+      if random 100 <= 2
+      [
+        set pcolor brown
+      ]
+    ]
+  ]
+end
+
+to Moveleoes
   ask leoes [
-    ifelse [pcolor] of patch-ahead 1 = red [
-      right 90
-    ] [
-      ifelse [pcolor] of patch-ahead 1 = blue [
-        forward 1
-        die
-      ] [
-        ifelse random-float 1 < 0.9 [
-          forward 1
-          set energy energy - 1 ; Deduz energia ao mover
+    ; Verifica se está em uma célula azul
+    ifelse [pcolor] of patch-here = blue [
+      if descansar = 0 [
+        set descansar TempoDescanso ; Inicia o descanso
+      ]
+      if descansar > 0 [
+        set descansar descansar - 1 ; Decrementa o tempo de descanso
+      ]
+      ifelse descansar = 0 [
+        ; Descanso completo, pode continuar
+        ; Guarda a célula azul na memória
+        if not member? patch-here celulas-azuis-em-memoria [
+          set celulas-azuis-em-memoria lput patch-here celulas-azuis-em-memoria
+        ]
+        ; Siga em frente ou tome outras ações
+        ifelse energia >= ValorMinimoAlimentacao [
+          ; Leão está bem alimentado, não precisa se mover para células azuis
+          ; Adicione sua lógica aqui
         ] [
-          ifelse random-float 1 < 0.05 [
-            right 90
+          ; Leão está com fome, considere mover-se para uma célula azul na memória
+          ifelse any? celulas-azuis-em-memoria [
+            let destino one-of celulas-azuis-em-memoria
+            face destino
+            move-to destino
           ] [
-            left 90
+            ; Não há células azuis na memória, continue movendo-se normalmente
+            set energia energia - 1
+            move-forward
+          ]
+        ]
+      ] [
+        ; Leão está descansando, não tome outras ações
+        ; Você pode adicionar mais lógica específica do descanso aqui, se necessário
+      ]
+    ] [
+      ; Se não estiver em uma célula azul, não descansa
+      set descansar 0
+      ; Verifica se há hienas nas proximidades
+      ifelse any? hienas-on neighbors [
+        ; Combate hienas
+        fight-hienas
+      ] [
+        ; Prioridade de alimentação
+        ifelse energia < ValorMinimoAlimentacao [
+          ; Adicione sua lógica de alimentação aqui
+        ] [
+          ifelse energia < (EnergiaInicial / 2) and any? celulas-azuis-em-memoria [
+            ; Leão com energia baixa e células azuis na memória
+            let destino one-of celulas-azuis-em-memoria
+            face destino
+            move-to destino
+          ] [
+            ; Movimento normal
+            set energia energia - 1
+            move-forward
           ]
         ]
       ]
@@ -98,44 +153,173 @@ to move-leoes
   ]
 end
 
-to move-hienas
-  ask hienas [
-    ifelse [pcolor] of patch-ahead 1 = red [
-      die
-    ] [
-      ifelse [pcolor] of patch-here = yellow [
-        die
-      ] [
-        forward 1
-        set energy energy - 1 ; Deduz energia ao mover
-      ]
-    ]
-  ]
+
+
+to move-forward
+  ; Move uma célula para a frente e atualiza a energia
+  set energia energia - 1
+  fd 1
 end
 
-to manage-food
-  ask patches with [pcolor = brown or pcolor = red] [
-    if any? leoes-here [
-      let food-type ifelse-value (pcolor = brown) [ "small" ] [ "large" ]
-      let energy-gain ifelse-value (food-type = "small") [ small-food-energy ] [ large-food-energy ]
-      let eating-leoes leoes-here with [pcolor = blue]
-
-      if count eating-leoes > 0 [
-        set pcolor black
-        set plabel ""
-        ask eating-leoes [
-          set energy energy + energy-gain ; Adiciona energia ao comer
+to-report special-movement
+  ; Realiza a ação de movimentação especial de acordo com as regras
+  let left-hienas count hienas-on neighbors with [pxcor < [pxcor] of myself]
+  let right-hienas count hienas-on neighbors with [pxcor > [pxcor] of myself]
+  let front-hienas count hienas-on neighbors with [pxcor = [pxcor] of myself + 1]
+  ifelse left-hienas >= 2 [
+    ; Duas ou mais hienas à esquerda
+    jump-right
+    report true
+  ] [
+    ifelse right-hienas >= 2 [
+      ; Duas ou mais hienas à direita
+      jump-left
+      report true
+    ] [
+      ifelse front-hienas >= 1 or (left-hienas >= 1 and right-hienas >= 1) [
+        ; Uma ou mais hienas à frente ou hienas nos lados
+        jump-back
+        report true
+      ] [
+        ifelse (left-hienas >= 1 and front-hienas >= 1) [
+          ; Hienas à esquerda e à frente
+          jump-right-behind
+          report true
+        ] [
+          ifelse (right-hienas >= 1 and front-hienas >= 1) [
+            ; Hienas à direita e à frente
+            jump-left-behind
+            report true
+          ] [
+            ifelse (left-hienas >= 1 and right-hienas >= 1 and front-hienas >= 1) [
+              ; Hienas nos três lados
+              jump-double-behind
+              report true
+            ] [
+              report false
+            ]
+          ]
         ]
       ]
     ]
   ]
 end
+
+
+to jump-right
+  ; Salta para a célula à direita
+  set energia energia - 2
+  rt 90
+  move-forward
+  lt 90
+end
+
+to jump-left
+  ; Salta para a célula à esquerda
+  set energia energia - 2
+  lt 90
+  move-forward
+  rt 90
+end
+
+to jump-back
+  ; Salta para a célula atrás
+  set energia energia - 3
+  bk 1
+end
+
+to jump-right-behind
+  ; Salta para a célula à direita, atrás
+  set energia energia - 5
+  rt 90
+  bk 1
+  lt 90
+end
+
+to jump-left-behind
+  ; Salta para a célula à esquerda, atrás
+  set energia energia - 5
+  lt 90
+  bk 1
+  rt 90
+end
+
+to jump-double-behind
+  ; Salta para duas células atrás
+  set energia energia - 4
+  bk 2
+end
+
+to fight-hienas
+  ; Combate hienas e atualiza a energia
+  ifelse nFood >= 10 and any? hienas-on neighbors [
+    let x one-of hienas-on neighbors
+    set energia energia + [energia] of x
+    ask x [die]
+    set nFood 0
+  ] [
+    ; Não faz nada se as condições não forem atendidas
+  ]
+end
+
+
+to Movehienas
+  ask hienas
+  [
+    let nivel-agrupamento 0
+    set nivel-agrupamento count hienas
+    ifelse nivel-agrupamento > 0 [
+      set color green  ; Mude a cor das hienas quando o nível de agrupamento for maior que zero
+    ] [
+      set color brown  ; Restaure a cor original se o nível de agrupamento for 1
+    ]
+
+    ; Ação de alimentação (prioritária)
+    ifelse [pcolor] of patch-ahead 1 = red [
+      set energia energia + EnergiaVermelhas
+      set pcolor brown
+    ][
+    ifelse [pcolor] of patch-ahead 1 = brown [
+      set energia energia + EnergiaCastanhas
+      set pcolor black
+    ] [
+      ; Combate leões
+      ifelse nivel-agrupamento > 1 and any? leoes-on neighbors [
+        let leaok one-of leoes-on neighbors
+        set energia energia - EnergiaInicial
+        ask leaok [die]
+      ] [
+        ; Realize outras ações (movimentação)
+        if random 4 = 0 [move-forward]
+        if random 4 = 1 [lt 90]
+        if random 4 = 2 [rt 90]
+      ]
+    ]
+   ]
+    ; Perda de energia em qualquer ação
+    set energia energia - 1
+  ]
+end
+
+
+to check-death
+  ask hienas
+  [
+    if energia <= 0
+    [die]
+  ]
+  ask leoes
+  [
+    if energia <= 0
+    [die]
+  ]
+end
 @#$#@#$#@
 GRAPHICS-WINDOW
-524
-39
-1027
-543
+489
+28
+992
+532
 -1
 -1
 15.0
@@ -159,11 +343,11 @@ ticks
 30.0
 
 BUTTON
-213
-121
-276
-154
-setup
+10
+24
+74
+57
+Setup
 setup
 NIL
 1
@@ -176,11 +360,11 @@ NIL
 1
 
 BUTTON
-294
-121
-361
-154
-go
+411
+27
+474
+60
+Go
 go
 T
 1
@@ -193,14 +377,171 @@ NIL
 1
 
 SLIDER
-203
-177
-375
-210
+9
+70
+165
+103
 nleoes
 nleoes
 0
-10
+100
+50.0
+1
+1
+NIL
+HORIZONTAL
+
+SLIDER
+320
+73
+476
+106
+nhienas
+nhienas
+0
+100
+50.0
+1
+1
+NIL
+HORIZONTAL
+
+MONITOR
+8
+118
+77
+163
+leões
+count leoes
+17
+1
+11
+
+MONITOR
+411
+118
+476
+163
+hienas
+count hienas
+17
+1
+11
+
+PLOT
+25
+271
+474
+532
+Agentes
+iterações
+n. de agentes
+0.0
+10.0
+0.0
+10.0
+true
+true
+"" ""
+PENS
+"leões" 1.0 0 -13345367 true "" "plot count leoes"
+"hienas" 1.0 0 -1184463 true "" "plot count hienas"
+
+SLIDER
+159
+26
+331
+59
+capmax
+capmax
+5
+100
+50.0
+1
+1
+NIL
+HORIZONTAL
+
+SLIDER
+1032
+29
+1204
+62
+reproductionLeoes
+reproductionLeoes
+0
+100
+50.0
+1
+1
+NIL
+HORIZONTAL
+
+SLIDER
+1232
+28
+1404
+61
+reproductionHienas
+reproductionHienas
+0
+100
+50.0
+1
+1
+NIL
+HORIZONTAL
+
+SLIDER
+7
+216
+179
+249
+birthEnergy
+birthEnergy
+1
+50
+25.0
+1
+1
+NIL
+HORIZONTAL
+
+SWITCH
+186
+70
+298
+103
+reproduce?
+reproduce?
+0
+1
+-1000
+
+SLIDER
+8
+170
+180
+203
+numCelulasAzuis
+numCelulasAzuis
+0
+5
+3.0
+1
+1
+NIL
+HORIZONTAL
+
+SLIDER
+306
+171
+478
+204
+castanhas
+castanhas
+1
+20
 10.0
 1
 1
@@ -208,78 +549,146 @@ NIL
 HORIZONTAL
 
 SLIDER
-204
-227
-376
-260
-nhienas
-nhienas
+308
+217
+480
+250
+vermelhas
+vermelhas
 0
 10
+5.0
+1
+1
+NIL
+HORIZONTAL
+
+SLIDER
+171
+125
+343
+158
+EnergiaInicial
+EnergiaInicial
+5
+100
+50.0
+1
+1
+NIL
+HORIZONTAL
+
+SLIDER
+1135
+129
+1314
+162
+ValorMinimoAlimentacao
+ValorMinimoAlimentacao
+1
+100
 10.0
 1
 1
 NIL
 HORIZONTAL
 
-MONITOR
-141
-293
-272
-338
-Número de Leões
-nleoes
-17
+SLIDER
+1233
+77
+1405
+110
+descansar
+descansar
+0
 1
-11
+7.0
+1
+1
+NIL
+HORIZONTAL
 
-MONITOR
-322
-294
-448
-339
-Número de Hienas
-nhienas
-17
+SLIDER
+1033
+79
+1205
+112
+TempoDescanso
+TempoDescanso
+0
+30
+10.0
 1
-11
+1
+NIL
+HORIZONTAL
+
+SLIDER
+1036
+176
+1208
+209
+EnergiaCastanhas
+EnergiaCastanhas
+1
+100
+50.0
+1
+1
+NIL
+HORIZONTAL
+
+SLIDER
+1236
+176
+1408
+209
+EnergiaVermelhas
+EnergiaVermelhas
+1
+100
+50.0
+1
+1
+NIL
+HORIZONTAL
 
 @#$#@#$#@
 ## WHAT IS IT?
 
-(a general understanding of what the model is trying to show or explain)
+This section could give a general understanding of what the model is trying to show or explain.
 
 ## HOW IT WORKS
 
-(what rules the agents use to create the overall behavior of the model)
+This section could explain what rules the agents use to create the overall behavior of the model.
 
 ## HOW TO USE IT
 
-(how to use the model, including a description of each of the items in the Interface tab)
+This section could explain how to use the model, including a description of each of the items in the interface tab.
 
 ## THINGS TO NOTICE
 
-(suggested things for the user to notice while running the model)
+This section could give some ideas of things for the user to notice while running the model.
 
 ## THINGS TO TRY
 
-(suggested things for the user to try to do (move sliders, switches, etc.) with the model)
+This section could give some ideas of things for the user to try to do (move sliders, switches, etc.) with the model.
 
 ## EXTENDING THE MODEL
 
-(suggested things to add or change in the Code tab to make the model more complicated, detailed, accurate, etc.)
+This section could give some ideas of things to add or change in the procedures tab to make the model more complicated, detailed, accurate, etc.
 
 ## NETLOGO FEATURES
 
-(interesting or unusual features of NetLogo that the model uses, particularly in the Code tab; or where workarounds were needed for missing features)
+This section could point out any especially interesting or unusual features of NetLogo that the model makes use of, particularly in the Procedures tab.  It might also point out places where workarounds were needed because of missing features.
 
 ## RELATED MODELS
 
-(models in the NetLogo Models Library and elsewhere which are of related interest)
+This section could give the names of models in the NetLogo Models Library or elsewhere which are of related interest.
 
 ## CREDITS AND REFERENCES
 
-(a reference to the model's URL on the web if it has one, as well as any other necessary credits, citations, and links)
+This section could contain a reference to the model's URL on the web if it has one, as well as any other necessary credits or references.
 @#$#@#$#@
 default
 true
@@ -520,19 +929,12 @@ Polygon -7500403 true true 135 90 120 45 150 15 180 45 165 90
 
 sheep
 false
-15
-Circle -1 true true 203 65 88
-Circle -1 true true 70 65 162
-Circle -1 true true 150 105 120
-Polygon -7500403 true false 218 120 240 165 255 165 278 120
-Circle -7500403 true false 214 72 67
-Rectangle -1 true true 164 223 179 298
-Polygon -1 true true 45 285 30 285 30 240 15 195 45 210
-Circle -1 true true 3 83 150
-Rectangle -1 true true 65 221 80 296
-Polygon -1 true true 195 285 210 285 210 240 240 210 195 210
-Polygon -7500403 true false 276 85 285 105 302 99 294 83
-Polygon -7500403 true false 219 85 210 105 193 99 201 83
+0
+Rectangle -7500403 true true 151 225 180 285
+Rectangle -7500403 true true 47 225 75 285
+Rectangle -7500403 true true 15 75 210 225
+Circle -7500403 true true 135 75 150
+Circle -16777216 true false 165 76 116
 
 square
 false
@@ -617,13 +1019,6 @@ Line -7500403 true 216 40 79 269
 Line -7500403 true 40 84 269 221
 Line -7500403 true 40 216 269 79
 Line -7500403 true 84 40 221 269
-
-wolf
-false
-0
-Polygon -16777216 true false 253 133 245 131 245 133
-Polygon -7500403 true true 2 194 13 197 30 191 38 193 38 205 20 226 20 257 27 265 38 266 40 260 31 253 31 230 60 206 68 198 75 209 66 228 65 243 82 261 84 268 100 267 103 261 77 239 79 231 100 207 98 196 119 201 143 202 160 195 166 210 172 213 173 238 167 251 160 248 154 265 169 264 178 247 186 240 198 260 200 271 217 271 219 262 207 258 195 230 192 198 210 184 227 164 242 144 259 145 284 151 277 141 293 140 299 134 297 127 273 119 270 105
-Polygon -7500403 true true -1 195 14 180 36 166 40 153 53 140 82 131 134 133 159 126 188 115 227 108 236 102 238 98 268 86 269 92 281 87 269 103 269 113
 
 x
 false
